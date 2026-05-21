@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>package.facepunch.splinetools</name>
+    </assembly>
+    <members>
+        <member name="T:Sandbox.SplineComponent">
+            <summary>
+            Represents a spline component that can be manipulated within the editor and at runtime.
+            </summary>
+        </member>
+    </members>
+</doc>

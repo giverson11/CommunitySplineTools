@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Editor": {
+      "commandName": "Executable",
+      "executablePath": "../../../../../../sbox-public/game/sbox-dev.exe",
+      "commandLineArgs": "-project \u0022C:\\Users\\garre\\Documents\\S\u0026boxProjects\\factory\\Libraries\\facepunch.splinetools\\splinetools.sbproj\u0022"
+    }
+  }
+}
