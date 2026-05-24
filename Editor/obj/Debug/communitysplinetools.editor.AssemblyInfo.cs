@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("communitysplinetools.editor")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ebc857890648b18a4f7485cb8768cada46da88a8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c357d9014ef6cd64da5766bd8162847802df94b8")]
 [assembly: System.Reflection.AssemblyProductAttribute("communitysplinetools.editor")]
 [assembly: System.Reflection.AssemblyTitleAttribute("communitysplinetools.editor")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

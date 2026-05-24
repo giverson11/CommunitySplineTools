@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "8R8dXxz6ayU=",
+  "dgSpecHash": "Vq1VbHk5FaE=",
   "success": true,
-  "projectFilePath": "C:\\Users\\garre\\Documents\\S&boxProjects\\factory\\Libraries\\facepunch.splinetools\\Editor\\splinetools.editor.csproj",
+  "projectFilePath": "/home/garretti/Documents/SboxProjects/factory/Libraries/CommunitySplineTools/Editor/communitysplinetools.editor.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }
