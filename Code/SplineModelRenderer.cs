@@ -4,11 +4,28 @@ namespace Sandbox;
 
 public sealed class SplineModelRenderer : ModelRenderer
 {
+<<<<<<< HEAD
 	[Property, Category( "Spline" )] public SplineComponent Spline { get; set; }
+=======
+	[Property, Category( "Spline" )] public SplineComponent Spline 
+	{ 
+		get; 
+		set
+		{
+			if (field != null) field.Spline.SplineChanged -= UpdateObject;
+			field = value;
+			if (Enabled){
+				value.Spline.SplineChanged += UpdateObject;
+				UpdateObject();
+			}
+		}
+	 }
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" )]
 	public Rotation ModelRotation
 	{
+<<<<<<< HEAD
 		get => _modelRotation;
 		set
 		{
@@ -18,10 +35,21 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Rotation _modelRotation = Rotation.Identity;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Rotation.Identity;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" )]
 	public Vector3 ModelScale
 	{
+<<<<<<< HEAD
 		get => _modelScale;
 		set
 		{
@@ -31,23 +59,44 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Vector3 _modelScale = Vector3.One;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Vector3.One;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" )]
 	public Vector3 ModelOffset
 	{
+<<<<<<< HEAD
 		get => _modelOffset;
 		set
 		{
 			_modelOffset = value;
+=======
+		get;
+		set
+		{
+			field = value;
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 			UpdateObject();
 		}
 	}
 
+<<<<<<< HEAD
 	private Vector3 _modelOffset = Vector3.Zero;
+=======
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" )]
 	public bool UseRotationMinimizingFrames
 	{
+<<<<<<< HEAD
 		get => _useRotationMinimizingFrames;
 		set
 		{
@@ -57,6 +106,16 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private bool _useRotationMinimizingFrames = true;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = true;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	private Mesh customMesh = new();
 	private Model customModel = Model.Error;
@@ -70,6 +129,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 	[Property, Category( "Spline" ), MinMax(0, float.PositiveInfinity)]
 	public float Spacing
 	{
+<<<<<<< HEAD
 		get => _spacing;
 		set
 		{
@@ -79,10 +139,21 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private float _spacing = 0f;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = 0f;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" )]
 	public bool FlexFit
 	{
+<<<<<<< HEAD
 		get => _flexFit;
 		set
 		{
@@ -97,6 +168,22 @@ public sealed class SplineModelRenderer : ModelRenderer
 	public bool startCapEnabled
 	{
 		get; set
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = false;
+
+
+	[Property, FeatureEnabled( "Start Cap" )]
+	public bool StartCapEnabled
+	{
+		get; 
+		set
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 		{
 			field = value;
 			UpdateObject();
@@ -104,9 +191,16 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	[Property, FeatureEnabled( "End Cap" )]
+<<<<<<< HEAD
 	public bool endCapEnabled
 	{
 		get; set
+=======
+	public bool EndCapEnabled
+	{
+		get; 
+		set
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 		{
 			field = value;
 			UpdateObject();
@@ -116,19 +210,30 @@ public sealed class SplineModelRenderer : ModelRenderer
 	[Property, Category( "Spline" ), Feature( "Start Cap" )]
 	public Model StartCap
 	{
+<<<<<<< HEAD
 		get => _startCap;
 		set
 		{
 			_startCap = value;
+=======
+		get;
+		set
+		{
+			field = value;
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 			UpdateObject();
 		}
 	}
 
+<<<<<<< HEAD
 	private Model _startCap;
+=======
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "Start Cap" )]
 	public Rotation StartCapRotation
 	{
+<<<<<<< HEAD
 		get => _startCapRotation;
 		set
 		{
@@ -138,10 +243,21 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Rotation _startCapRotation = Rotation.Identity;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Rotation.Identity;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "Start Cap" )]
 	public Vector3 StartCapScale
 	{
+<<<<<<< HEAD
 		get => _startCapScale;
 		set
 		{
@@ -151,10 +267,21 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Vector3 _startCapScale = Vector3.One;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Vector3.One;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "Start Cap" )]
 	public Vector3 StartCapOffset
 	{
+<<<<<<< HEAD
 		get => _startCapOffset;
 		set
 		{
@@ -164,23 +291,44 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Vector3 _startCapOffset = Vector3.Zero;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Vector3.Zero;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "End Cap" )]
 	public Model EndCap
 	{
+<<<<<<< HEAD
 		get => _endCap;
 		set
 		{
 			_endCap = value;
+=======
+		get;
+		set
+		{
+			field = value;
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 			UpdateObject();
 		}
 	}
 
+<<<<<<< HEAD
 	private Model _endCap;
+=======
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "End Cap" )]
 	public Rotation EndCapRotation
 	{
+<<<<<<< HEAD
 		get => _endCapRotation;
 		set
 		{
@@ -190,10 +338,21 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Rotation _endCapRotation = Rotation.Identity;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Rotation.Identity;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "End Cap" )]
 	public Vector3 EndCapScale
 	{
+<<<<<<< HEAD
 		get => _endCapScale;
 		set
 		{
@@ -203,10 +362,21 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Vector3 _endCapScale = Vector3.One;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Vector3.One;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	[Property, Category( "Spline" ), Feature( "End Cap" )]
 	public Vector3 EndCapOffset
 	{
+<<<<<<< HEAD
 		get => _endCapOffset;
 		set
 		{
@@ -216,6 +386,16 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	private Vector3 _endCapOffset = Vector3.Zero;
+=======
+		get;
+		set
+		{
+			field = value;
+			UpdateObject();
+		}
+	} = Vector3.Zero;
+
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 	private Mesh startCapMesh;
 	private Mesh endCapMesh;
@@ -287,10 +467,14 @@ public sealed class SplineModelRenderer : ModelRenderer
 	{
 		base.UpdateObject();
 
+<<<<<<< HEAD
 		if ( customMesh == null )
 		{
 			customMesh = new();
 		}
+=======
+		customMesh ??= new();
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 		if ( !SceneObject.IsValid() || !Spline.IsValid() )
 			return;
@@ -308,17 +492,28 @@ public sealed class SplineModelRenderer : ModelRenderer
 
 		// Optional cap meshes claim a fixed slice of the spline at each end. Each cap has its
 		// own rotation/scale/offset so it can be flipped, resized, or nudged independently.
+<<<<<<< HEAD
 		bool hasStartCap = _startCap.IsValid() && _startCap != Model.Error && startCapEnabled;
 		bool hasEndCap = _endCap.IsValid() && _endCap != Model.Error && endCapEnabled;
+=======
+		bool hasStartCap = StartCap.IsValid() && StartCap != Model.Error && StartCapEnabled;
+		bool hasEndCap = EndCap.IsValid() && EndCap != Model.Error && EndCapEnabled;
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 		float startCapMin = 0f, startCapSize = 0f;
 		Vertex[] startCapVerts = null;
 		uint[] startCapInds = null;
 		if ( hasStartCap )
 		{
+<<<<<<< HEAD
 			(startCapMin, startCapSize) = GetForwardSpan( _startCap.Bounds, StartCapRotation, StartCapScale );
 			startCapVerts = _startCap.GetVertices();
 			startCapInds = _startCap.GetIndices();
+=======
+			(startCapMin, startCapSize) = GetForwardSpan( StartCap.Bounds, StartCapRotation, StartCapScale );
+			startCapVerts = StartCap.GetVertices();
+			startCapInds = StartCap.GetIndices();
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 		}
 
 		float endCapMin = 0f, endCapSize = 0f;
@@ -326,9 +521,15 @@ public sealed class SplineModelRenderer : ModelRenderer
 		uint[] endCapInds = null;
 		if ( hasEndCap )
 		{
+<<<<<<< HEAD
 			(endCapMin, endCapSize) = GetForwardSpan( _endCap.Bounds, EndCapRotation, EndCapScale );
 			endCapVerts = _endCap.GetVertices();
 			endCapInds = _endCap.GetIndices();
+=======
+			(endCapMin, endCapSize) = GetForwardSpan( EndCap.Bounds, EndCapRotation, EndCapScale );
+			endCapVerts = EndCap.GetVertices();
+			endCapInds = EndCap.GetIndices();
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 		}
 
 		// Interior region for repeating mesh — caps eat into each end.
@@ -384,7 +585,11 @@ public sealed class SplineModelRenderer : ModelRenderer
 			startCapMesh ??= new();
 			BuildSegmentMesh( startCapMesh,
 				startCapVerts, startCapInds,
+<<<<<<< HEAD
 				MaterialOverride ?? _startCap.Materials.FirstOrDefault(),
+=======
+				StartCap.Materials.FirstOrDefault(),
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 				StartCapRotation, StartCapOffset, StartCapScale,
 				startCapMin, startCapSize,
 				0f, mainStartDistance,
@@ -402,7 +607,11 @@ public sealed class SplineModelRenderer : ModelRenderer
 			endCapMesh ??= new();
 			BuildSegmentMesh( endCapMesh,
 				endCapVerts, endCapInds,
+<<<<<<< HEAD
 				MaterialOverride ?? _endCap.Materials.FirstOrDefault(),
+=======
+				EndCap.Materials.FirstOrDefault(),
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 				EndCapRotation, EndCapOffset, EndCapScale,
 				endCapMin, endCapSize,
 				mainEndDistance, endCapRegion,
@@ -455,6 +664,10 @@ public sealed class SplineModelRenderer : ModelRenderer
 	{
 		int totalVerts = srcVerts.Length * copies;
 		int totalInds = srcIndices.Length * copies;
+<<<<<<< HEAD
+=======
+		Vertex v = new();
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 
 		if ( vertScratch == null || vertScratch.Length < totalVerts )
 			vertScratch = new Vertex[totalVerts];
@@ -501,7 +714,11 @@ public sealed class SplineModelRenderer : ModelRenderer
 		}
 		else
 		{
+<<<<<<< HEAD
 			mesh.CreateVertexBuffer( totalVerts, Vertex.Layout, vertScratch.AsSpan( 0, totalVerts ) );
+=======
+			mesh.CreateVertexBuffer( totalVerts, vertScratch.AsSpan( 0, totalVerts ) );
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 			mesh.CreateIndexBuffer( totalInds, indexScratch.AsSpan( 0, totalInds ) );
 		}
 
@@ -539,7 +756,11 @@ public sealed class SplineModelRenderer : ModelRenderer
 		// Offset is applied in the per-frame local space so it rotates with the spline.
 		// x  shifts the mesh along the local tangent (phase along the curve),
 		// y/z shift perpendicular to the tangent so the mesh follows a parallel curve.
+<<<<<<< HEAD
 		Vector3 scaledLocalPosition = new Vector3(
+=======
+		Vector3 scaledLocalPosition = new(
+>>>>>>> a0ca847 (removed useless helper local variables in line with dotnet 10)
 			modelOffset.x,
 			(localPosition.y + modelOffset.y) * scale.y,
 			(localPosition.z + modelOffset.z) * scale.z );
