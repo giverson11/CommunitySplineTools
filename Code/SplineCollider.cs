@@ -4,107 +4,111 @@ namespace Sandbox;
 
 public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 {
-	[Property, Category( "Spline" )] public SplineComponent Spline { get; set; }
+	[Property, Category( "Spline" )] public SplineComponent Spline 
+	{ 
+		get; 
+		set
+		{
+			if(field != null ) field.Spline.SplineChanged -= MarkDirty;
+			field = value;
+			if(Enabled) {
+				field.Spline.SplineChanged += MarkDirty;
+				Rebuild();
+			}
+		} 
+	}
 
 	[Property, Category("Spline")]
 	[Range( 0, 16 )]
 	public int Subdivision
 	{
-		get => _subdivision; set
+		get; 
+		set
 		{
-			_subdivision = value;
+			field = value;
 			Rebuild();
 		}
-	}
+	} = 0;
 
 	[Property, Category( "Spline" )]
 	public Rotation ModelRotation
 	{
-		get => _modelRotation;
+		get;
 		set
 		{
-			_modelRotation = value;
+			field = value;
 			IsDirty = true;
 		}
-	}
-
-	private Rotation _modelRotation = Rotation.Identity;
+	} = Rotation.Identity;
 
 	[Property, Category( "Spline" )]
 	public Vector3 ModelScale
 	{
-		get => _modelScale;
+		get;
 		set
 		{
-			_modelScale = value;
+			field = value;
 			IsDirty = true;
 		}
-	}
+	} = Vector3.One;
 
-	private Vector3 _modelScale = Vector3.One;
 
 	[Property, Category( "Spline" )]
 	public Vector3 ModelOffset
 	{
-		get => _modelOffset;
+		get;
 		set
 		{
-			_modelOffset = value;
+			field = value;
 			IsDirty = true;
 		}
-	}
+	} = Vector3.Zero;
 
-	private Vector3 _modelOffset = Vector3.Zero;
 
 	private Vector3 ModelForward => ModelRotation.Forward;
 
 	[Property, Category( "Spline" )]
 	public bool UseRotationMinimizingFrames
 	{
-		get => _useRotationMinimizingFrames;
+		get;
 		set
 		{
-			_useRotationMinimizingFrames = value;
+			field = value;
 			IsDirty = true;
 		}
-	}
+	} = false;
 
-	private bool _useRotationMinimizingFrames = false;
 
-	private int _subdivision = 0;
 
 	private bool IsDirty
 	{
-		get => _isDirty; set => _isDirty = value;
-	}
+		get; set;
+	} = true;
 
-	private bool _isDirty = true;
 
 	[Property, Category( "Spline" ), MinMax( 0, float.PositiveInfinity )]
 	public float Spacing
 	{
-		get => _spacing;
+		get;
 		set
 		{
-			_spacing = value;
+			field = value;
 			IsDirty = true;
 		}
-	}
+	} = 0f;
 
-	private float _spacing = 0f;
 
 	[Property, Category( "Spline" )]
 	public bool FlexFit
 	{
-		get => _flexFit;
+		get;
 		set
 		{
-			_flexFit = value;
+			field = value;
 			IsDirty = true;
 		}
-	}
+	} = false;
 
-	private bool _flexFit = false;
 
 	protected override void OnEnabled()
 	{
@@ -214,7 +218,15 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 					deformedVertices.Add( deformedVertex );
 				}
 				var shape = _PhysicsBody.AddMeshShape( deformedVertices, subMesh.Indices );
+				var midDistance = (startDistance + endDistance) * 0.5f;
+				var worldTangent = Spline.Spline.SampleAtDistance( midDistance ).Tangent.Normal;
+				var localTangent = _PhysicsBody.Rotation.Inverse * worldTangent;
+  				// Then for each deformed hull/mesh shape added in this iteration:
+  				shape.SurfaceVelocity = localTangent * SurfaceVelocity;
 				shape.Surface = subMesh.Surface;
+				if (Friction != null) shape.Friction = (float)Friction;
+				if (Elasticity != null) shape.Surface.Elasticity = (float)Elasticity;
+				if (RollingResistance != null) shape.Surface.RollingResistance = (float)RollingResistance;
 			}
 
 			// Deform hulls
@@ -227,12 +239,21 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 					deformedVertices.Add( deformedVertex );
 				}
 				var shape = _PhysicsBody.AddHullShape( Vector3.Zero, Rotation.Identity, deformedVertices );
+				var midDistance = (startDistance + endDistance) * 0.5f;
+				var worldTangent = Spline.Spline.SampleAtDistance( midDistance ).Tangent.Normal;
+				var localTangent = _PhysicsBody.Rotation.Inverse * worldTangent;
+  				// Then for each deformed hull/mesh shape added in this iteration:
+  				shape.SurfaceVelocity = localTangent * SurfaceVelocity;
 				shape.Surface = subHull.Surface;
+				if (Friction != null) shape.Friction = (float)Friction;
+				if (Elasticity != null) shape.Surface.Elasticity = (float)Elasticity;
+				if (RollingResistance != null) shape.Surface.RollingResistance = (float)RollingResistance;
 			}
 		}
 
 		IsDirty = false;
 	}
+
 
 	protected override IEnumerable<PhysicsShape> CreatePhysicsShapes( PhysicsBody targetBody, Transform local )
 	{
@@ -658,3 +679,5 @@ class Vector3Comparer : IEqualityComparer<Vector3>
 		}
 	}
 }
+
+

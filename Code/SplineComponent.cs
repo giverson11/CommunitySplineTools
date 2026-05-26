@@ -40,13 +40,10 @@ public sealed class SplineComponent : Component, Component.ExecuteInEditor, Comp
 	// TODO should be editor internal only
 	// maybe even make this a cross component functionality (mov to basec comp class)
 	public bool ShouldRenderGizmos {
-		get => _shouldRenderGizmos;
-		set {
-			_shouldRenderGizmos = value;
-		}
+		get;
+		set;
 	}
 
-	private bool _shouldRenderGizmos = true;
 
 	private void UpdateDrawCache()
 	{

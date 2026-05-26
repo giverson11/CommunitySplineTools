@@ -1,4 +1,6 @@
 using System;
+using NativeEngine;
+using System.Runtime.InteropServices;
 
 namespace Sandbox;
 
@@ -349,6 +351,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 				distancePerMeshWitSpacing = mainLength / meshesRequiredWithSpacing;
 			}
 		}
+		
 
 		int framesPerMesh = 12;
 		int frameCount = Math.Max( 2, frameSegments * framesPerMesh + 1 );
@@ -391,6 +394,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 		// End cap occupies [mainEndDistance, splineLength].
 		bool builtEndCap = false;
 		float endCapRegion = splineLength - mainEndDistance;
+		float endCapStartDistance = mainStartDistance + distancePerMeshWitSpacing*meshesRequiredWithSpacing;
 		if ( hasEndCap && endCapRegion > 0f )
 		{
 			endCapMesh ??= new();
@@ -399,7 +403,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 				EndCap.Materials.FirstOrDefault(),
 				EndCapRotation, EndCapOffset, EndCapScale,
 				endCapMin, endCapSize,
-				mainEndDistance, endCapRegion,
+				endCapStartDistance, endCapRegion,
 				1, 0f,
 				frames,
 				ref endCapDeformedVertices, ref endCapDeformedIndices );
@@ -415,7 +419,6 @@ public sealed class SplineModelRenderer : ModelRenderer
 		if ( builtEndCap ) builder = builder.AddMesh( endCapMesh );
 
 		customModel = builder.Create();
-		// TODO use modelsystem.ChangeModel
 		SceneObject.Model = customModel;
 	}
 
