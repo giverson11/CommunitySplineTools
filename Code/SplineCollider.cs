@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Numerics;
 
 namespace Sandbox;
 
@@ -110,6 +111,121 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 	} = false;
 
 
+	// Optional cap colliders that claim a fixed slice of the spline at each end, mirroring
+	// the cap feature on SplineModelRenderer. Each cap is its own physics Model with its own
+	// rotation/scale/offset so it can be flipped, resized, or nudged independently.
+
+	[Property, FeatureEnabled( "Start Cap" )]
+	public bool StartCapEnabled
+	{
+		get;
+		set
+		{
+			field = value;
+			Rebuild();
+		}
+	}
+
+	[Property, FeatureEnabled( "End Cap" )]
+	public bool EndCapEnabled
+	{
+		get;
+		set
+		{
+			field = value;
+			Rebuild();
+		}
+	}
+
+	[Property, Category( "Spline" ), Feature( "Start Cap" )]
+	public Model StartCap
+	{
+		get;
+		set
+		{
+			field = value;
+			Rebuild();
+		}
+	}
+
+	[Property, Category( "Spline" ), Feature( "Start Cap" )]
+	public Rotation StartCapRotation
+	{
+		get;
+		set
+		{
+			field = value;
+			IsDirty = true;
+		}
+	} = Rotation.Identity;
+
+	[Property, Category( "Spline" ), Feature( "Start Cap" )]
+	public Vector3 StartCapScale
+	{
+		get;
+		set
+		{
+			field = value;
+			IsDirty = true;
+		}
+	} = Vector3.One;
+
+	[Property, Category( "Spline" ), Feature( "Start Cap" )]
+	public Vector3 StartCapOffset
+	{
+		get;
+		set
+		{
+			field = value;
+			IsDirty = true;
+		}
+	} = Vector3.Zero;
+
+	[Property, Category( "Spline" ), Feature( "End Cap" )]
+	public Model EndCap
+	{
+		get;
+		set
+		{
+			field = value;
+			Rebuild();
+		}
+	}
+
+	[Property, Category( "Spline" ), Feature( "End Cap" )]
+	public Rotation EndCapRotation
+	{
+		get;
+		set
+		{
+			field = value;
+			IsDirty = true;
+		}
+	} = Rotation.Identity;
+
+	[Property, Category( "Spline" ), Feature( "End Cap" )]
+	public Vector3 EndCapScale
+	{
+		get;
+		set
+		{
+			field = value;
+			IsDirty = true;
+		}
+	} = Vector3.One;
+
+	[Property, Category( "Spline" ), Feature( "End Cap" )]
+	public Vector3 EndCapOffset
+	{
+		get;
+		set
+		{
+			field = value;
+			IsDirty = true;
+		}
+	} = Vector3.Zero;
+
+
 	protected override void OnEnabled()
 	{
 		if ( Model.IsValid() && Spline.IsValid() )
@@ -130,6 +246,10 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		Spline.Spline.SplineChanged -= MarkDirty;
 		subHulls.Clear();
 		subMeshes.Clear();
+		startCapSubHulls.Clear();
+		startCapSubMeshes.Clear();
+		endCapSubHulls.Clear();
+		endCapSubMeshes.Clear();
 		base.OnDisabled();
 	}
 
@@ -146,7 +266,9 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		}
 
 		// Nothing to deform
-		if ( subHulls.Count == 0 && subMeshes.Count == 0 )
+		if ( subHulls.Count == 0 && subMeshes.Count == 0
+			&& startCapSubHulls.Count == 0 && startCapSubMeshes.Count == 0
+			&& endCapSubHulls.Count == 0 && endCapSubMeshes.Count == 0 )
 		{
 			return;
 		}
@@ -165,93 +287,137 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		if ( _physicPartBounds is null )
 			return;
 
-		var transformedBounds = Model.Bounds;
-		transformedBounds.Mins = transformedBounds.Mins * ModelScale;
-		transformedBounds.Maxs = transformedBounds.Maxs * ModelScale;
-		transformedBounds = transformedBounds.Rotate( ModelRotation );
-
-		var sizeInModelDir = transformedBounds.Size.Dot( Vector3.Forward );
-		var minInModelDir = transformedBounds.Center.Dot( Vector3.Forward ) - sizeInModelDir / 2;
+		var (mainMin, mainSize) = GetForwardSpan( Model.Bounds, ModelRotation, ModelScale );
 
 		var splineLength = Spline.Spline.Length;
 
-		var sizeInModelDirWithSpacing = sizeInModelDir + Spacing;
-		var frameSegments = (int)Math.Ceiling( splineLength / sizeInModelDir );
-		var meshesRequiredWithSpacing = (int)Math.Floor( splineLength / sizeInModelDirWithSpacing );
-		if ( FlexFit )
-		{
-			meshesRequiredWithSpacing = (int)Math.Ceiling( splineLength / sizeInModelDirWithSpacing ); ;
-		}
-		var distancePerMeshWitSpacing = sizeInModelDirWithSpacing;
-		if ( FlexFit )
-		{
-			distancePerMeshWitSpacing = splineLength / meshesRequiredWithSpacing;
-		}
+		// Caps eat a fixed slice off each end; the repeating mesh fills the interior between them.
+		bool hasStartCap = StartCapEnabled && (startCapSubHulls.Count > 0 || startCapSubMeshes.Count > 0);
+		bool hasEndCap = EndCapEnabled && (endCapSubHulls.Count > 0 || endCapSubMeshes.Count > 0);
 
-		if ( meshesRequiredWithSpacing == 0 )
+		float startCapMin = 0f, startCapSize = 0f;
+		if ( hasStartCap )
+			(startCapMin, startCapSize) = GetForwardSpan( StartCap.Bounds, StartCapRotation, StartCapScale );
+
+		float endCapMin = 0f, endCapSize = 0f;
+		if ( hasEndCap )
+			(endCapMin, endCapSize) = GetForwardSpan( EndCap.Bounds, EndCapRotation, EndCapScale );
+
+		// Interior region for the repeating mesh — caps eat into each end.
+		float mainStartDistance = MathF.Min( startCapSize, splineLength );
+		float mainEndDistance = MathF.Max( mainStartDistance, splineLength - endCapSize );
+		float mainLength = mainEndDistance - mainStartDistance;
+
+		var sizeInModelDirWithSpacing = mainSize + Spacing;
+		var frameSegments = (int)Math.Ceiling( splineLength / MathF.Max( 1f, mainSize ) );
+		if ( frameSegments < 1 ) frameSegments = 1;
+
+		int meshesRequiredWithSpacing = 0;
+		float distancePerMeshWitSpacing = sizeInModelDirWithSpacing;
+		if ( mainLength > 0f && sizeInModelDirWithSpacing > 0f )
 		{
-			return;
+			meshesRequiredWithSpacing = (int)Math.Floor( mainLength / sizeInModelDirWithSpacing );
+			if ( FlexFit )
+			{
+				meshesRequiredWithSpacing = (int)Math.Ceiling( mainLength / sizeInModelDirWithSpacing );
+			}
+
+			if ( FlexFit && meshesRequiredWithSpacing > 0 )
+			{
+				distancePerMeshWitSpacing = mainLength / meshesRequiredWithSpacing;
+			}
 		}
 
 		// Calculate frames along the spline
 		int framesPerMesh = 12; // Adjust as needed
-		var totalFrames = frameSegments * framesPerMesh + 1;
+		int frameCount = Math.Max( 2, frameSegments * framesPerMesh + 1 );
 
-		var frames = UseRotationMinimizingFrames ? SplineModelRenderer.CalculateRotationMinimizingTangentFrames( Spline.Spline, frameSegments * framesPerMesh + 1 ) : SplineModelRenderer.CalculateTangentFramesUsingUpDir( Spline.Spline, frameSegments * framesPerMesh + 1 );
+		var frames = UseRotationMinimizingFrames
+			? SplineModelRenderer.CalculateRotationMinimizingTangentFrames( Spline.Spline, frameCount )
+			: SplineModelRenderer.CalculateTangentFramesUsingUpDir( Spline.Spline, frameCount );
 
 
 		// Clear existing shapes
 		_PhysicsBody.ClearShapes();
 
+		// Main repeating shapes in the interior region.
 		for ( var meshIndex = 0; meshIndex < meshesRequiredWithSpacing; meshIndex++ )
 		{
-			float startDistance = meshIndex * distancePerMeshWitSpacing;
+			float startDistance = mainStartDistance + meshIndex * distancePerMeshWitSpacing;
 			float endDistance = startDistance + distancePerMeshWitSpacing - Spacing;
 
-			// Deform meshes
-			foreach ( var subMesh in subMeshes )
-			{
-				var deformedVertices = new List<Vector3>();
-				foreach ( var vertex in subMesh.Vertices )
-				{
-					SplineModelRenderer.Deform( Spline, ModelRotation, ModelOffset, ModelScale, vertex, Vector3.Up, new Vector4( Vector3.Up, 0f ), frames, startDistance, endDistance, minInModelDir, sizeInModelDir, out var deformedVertex, out var deformedNormal, out var deformedTangent );
-					deformedVertices.Add( deformedVertex );
-				}
-				var shape = _PhysicsBody.AddMeshShape( deformedVertices, subMesh.Indices );
-				var midDistance = (startDistance + endDistance) * 0.5f;
-				var worldTangent = Spline.Spline.SampleAtDistance( midDistance ).Tangent.Normal;
-				var localTangent = _PhysicsBody.Rotation.Inverse * worldTangent;
-  				// Then for each deformed hull/mesh shape added in this iteration:
-  				shape.SurfaceVelocity = localTangent * SurfaceVelocity;
-				shape.Surface = subMesh.Surface;
-				if (Friction != null) shape.Friction = (float)Friction;
-				if (Elasticity != null) shape.Surface.Elasticity = (float)Elasticity;
-				if (RollingResistance != null) shape.Surface.RollingResistance = (float)RollingResistance;
-			}
+			DeformAndAddShapes( ref subMeshes, ref subHulls, ModelRotation, ModelOffset, ModelScale, mainMin, mainSize, frames, startDistance, endDistance );
+		}
 
-			// Deform hulls
-			foreach ( var subHull in subHulls )
-			{
-				var deformedVertices = new List<Vector3>();
-				foreach ( var vertex in subHull.Vertices )
-				{
-					SplineModelRenderer.Deform( Spline, ModelRotation, ModelOffset, ModelScale, vertex, Vector3.Up, new Vector4( Vector3.Up, 0f ), frames, startDistance, endDistance, minInModelDir, sizeInModelDir, out var deformedVertex, out var deformedNormal, out var deformedTangent );
-					deformedVertices.Add( deformedVertex );
-				}
-				var shape = _PhysicsBody.AddHullShape( Vector3.Zero, Rotation.Identity, deformedVertices );
-				var midDistance = (startDistance + endDistance) * 0.5f;
-				var worldTangent = Spline.Spline.SampleAtDistance( midDistance ).Tangent.Normal;
-				var localTangent = _PhysicsBody.Rotation.Inverse * worldTangent;
-  				// Then for each deformed hull/mesh shape added in this iteration:
-  				shape.SurfaceVelocity = localTangent * SurfaceVelocity;
-				shape.Surface = subHull.Surface;
-				if (Friction != null) shape.Friction = (float)Friction;
-				if (Elasticity != null) shape.Surface.Elasticity = (float)Elasticity;
-				if (RollingResistance != null) shape.Surface.RollingResistance = (float)RollingResistance;
-			}
+		// Start cap occupies [0, mainStartDistance].
+		if ( hasStartCap && mainStartDistance > 0f )
+		{
+			DeformAndAddShapes( ref startCapSubMeshes, ref startCapSubHulls, StartCapRotation, StartCapOffset, StartCapScale, startCapMin, startCapSize, frames, 0f, mainStartDistance );
+		}
+
+		// End cap occupies [endCapStartDistance, splineLength].
+		float endCapRegion = splineLength - mainEndDistance;
+		float endCapStartDistance = mainStartDistance + distancePerMeshWitSpacing * meshesRequiredWithSpacing;
+		if ( hasEndCap && endCapRegion > 0f )
+		{
+			DeformAndAddShapes( ref endCapSubMeshes, ref endCapSubHulls, EndCapRotation, EndCapOffset, EndCapScale, endCapMin, endCapSize, frames, endCapStartDistance, endCapStartDistance + endCapRegion );
 		}
 
 		IsDirty = false;
+	}
+
+	private (float min, float size) GetForwardSpan( BBox bounds, Rotation rotation, Vector3 scale )
+	{
+		bounds.Mins = bounds.Mins * scale;
+		bounds.Maxs = bounds.Maxs * scale;
+		bounds = bounds.Rotate( rotation );
+		float size = bounds.Size.Dot( Vector3.Forward );
+		float min = bounds.Center.Dot( Vector3.Forward ) - size / 2f;
+		return (min, size);
+	}
+
+	// Deforms a set of sub-shapes across [startDistance, endDistance] of the spline and adds the
+	// resulting physics shapes to the body. Shared by the repeating main mesh and both caps.
+	private void DeformAndAddShapes( ref List<SubMesh> meshes, ref List<SubHull> hulls, Rotation rotation, Vector3 offset, Vector3 scale, float min, float size, Transform[] frames, float startDistance, float endDistance )
+	{
+		foreach ( var subMesh in meshes )
+		{
+			var deformedVertices = new List<Vector3>( subMesh.Vertices.Count );
+			foreach ( var vertex in subMesh.Vertices )
+			{
+				SplineModelRenderer.Deform( Spline, rotation, offset, scale, vertex, Vector3.Up, new Vector4( Vector3.Up, 0f ), frames, startDistance, endDistance, min, size, out var deformedVertex, out _, out _ );
+				deformedVertices.Add( deformedVertex );
+			}
+			var shape = _PhysicsBody.AddMeshShape( deformedVertices, subMesh.Indices );
+			ApplyShapeProperties( shape, subMesh.Surface, startDistance, endDistance );
+		}
+
+		foreach ( var subHull in hulls )
+		{
+			var deformedVertices = new List<Vector3>( subHull.Vertices.Count );
+			foreach ( var vertex in subHull.Vertices )
+			{
+				SplineModelRenderer.Deform( Spline, rotation, offset, scale, vertex, Vector3.Up, new Vector4( Vector3.Up, 0f ), frames, startDistance, endDistance, min, size, out var deformedVertex, out _, out _ );
+				deformedVertices.Add( deformedVertex );
+			}
+			var shape = _PhysicsBody.AddHullShape( Vector3.Zero, Rotation.Identity, deformedVertices );
+			ApplyShapeProperties( shape, subHull.Surface, startDistance, endDistance );
+		}
+	}
+
+	private void ApplyShapeProperties( PhysicsShape shape, Surface surface, float startDistance, float endDistance )
+	{
+		// SurfaceVelocity is body-local, so align it with the spline tangent at the middle of this
+		// shape's span and undo the body's world rotation.
+		var midDistance = (startDistance + endDistance) * 0.5f;
+		var tangent = Spline.Spline.SampleAtDistance( midDistance ).Tangent.Normal;
+		Rotation rot = Rotation.FromToRotation(SurfaceVelocity.Normal, tangent);
+		shape.SurfaceVelocity = rot * SurfaceVelocity;
+
+		shape.Surface = surface;
+		if ( Friction != null ) shape.Friction = (float)Friction;
+		if ( Elasticity != null ) shape.Surface.Elasticity = (float)Elasticity;
+		if ( RollingResistance != null ) shape.Surface.RollingResistance = (float)RollingResistance;
 	}
 
 
@@ -268,99 +434,30 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 
 		subMeshes.Clear();
 		subHulls.Clear();
+		startCapSubMeshes.Clear();
+		startCapSubHulls.Clear();
+		endCapSubMeshes.Clear();
+		endCapSubHulls.Clear();
 
 		_physicPartBounds = null;
 
+		BuildSubShapes( Model, local, ModelRotation, subHulls, subMeshes, ref _physicPartBounds );
+
+		if ( StartCapEnabled && StartCap.IsValid() && StartCap != Model.Error )
+		{
+			BBox? capBounds = null;
+			BuildSubShapes( StartCap, local, StartCapRotation, startCapSubHulls, startCapSubMeshes, ref capBounds );
+		}
+
+		if ( EndCapEnabled && EndCap.IsValid() && EndCap != Model.Error )
+		{
+			BBox? capBounds = null;
+			BuildSubShapes( EndCap, local, EndCapRotation, endCapSubHulls, endCapSubMeshes, ref capBounds );
+		}
+
+		// Body-level properties only come from the main model's parts.
 		foreach ( var part in Model.Physics.Parts )
 		{
-			// Bone transform
-			var bx = local.ToWorld( part.Transform );
-
-			foreach ( var sphere in part.Spheres )
-			{
-				const int rings = 8;
-				SubdivideSphere( rings, sphere.Sphere.Center, sphere.Sphere.Radius, sphere.Surface, bx );
-
-				var sphereBounds = new BBox( sphere.Sphere.Center - new Vector3( sphere.Sphere.Radius ), sphere.Sphere.Center + new Vector3( sphere.Sphere.Radius ) );
-
-				sphereBounds = sphereBounds.Transform( bx );
-
-				_physicPartBounds = _physicPartBounds?.AddBBox( sphereBounds ) ?? sphereBounds;
-			}
-
-			foreach ( var capsule in part.Capsules )
-			{
-				var rotatedCenterA = bx.PointToWorld( capsule.Capsule.CenterA );
-				var rotatedCenterB = bx.PointToWorld( capsule.Capsule.CenterB );
-				SubdivideCapsule( 4 + Subdivision, rotatedCenterA, rotatedCenterB, capsule.Capsule.Radius, capsule.Surface );
-
-				var capsuleBounds = BBox.FromPoints(
-					[
-						rotatedCenterA - new Vector3( capsule.Capsule.Radius ),
-						rotatedCenterA + new Vector3( capsule.Capsule.Radius ),
-						rotatedCenterB - new Vector3( capsule.Capsule.Radius ),
-						rotatedCenterB + new Vector3( capsule.Capsule.Radius )
-					] );
-
-				_physicPartBounds = _physicPartBounds?.AddBBox( capsuleBounds ) ?? capsuleBounds;
-			}
-
-			foreach ( var hull in part.Hulls )
-			{
-				SubdivideHull( hull, Subdivision, hull.Surface, bx );
-
-				var hullBounds = hull.Bounds.Transform( bx ).Rotate( ModelRotation );
-
-				_physicPartBounds = _physicPartBounds?.AddBBox( hullBounds ) ?? hullBounds;
-			}
-
-			foreach ( var mesh in part.Meshes )
-			{
-                var triangles = mesh.GetTriangles().ToList();
-
-				// TODO slow as fuck can be improved by getting the lists directly rather than the traingle objects
-				// can be done once we are out of scene staging.
-                var vertices = new List<Vector3>();
-                var indices = new List<int>(triangles.Count * 3);
-                var vertexMap = new Dictionary<Vector3, int>(new Vector3Comparer());
-
-                foreach (var triangle in triangles)
-                {
-                    if (!vertexMap.ContainsKey(triangle.A))
-                    {
-                        vertexMap[triangle.A] = vertices.Count;
-                        vertices.Add(triangle.A);
-                    }
-                    indices.Add(vertexMap[triangle.A]);
-
-                    if (!vertexMap.ContainsKey(triangle.B))
-                    {
-                        vertexMap[triangle.B] = vertices.Count;
-                        vertices.Add(triangle.B);
-                    }
-                    indices.Add(vertexMap[triangle.B]);
-
-                    if (!vertexMap.ContainsKey(triangle.C))
-                    {
-                        vertexMap[triangle.C] = vertices.Count;
-                        vertices.Add(triangle.C);
-                    }
-                    indices.Add(vertexMap[triangle.C]);
-                }
-
-                subMeshes.Add(new SubMesh
-                {
-                    Vertices = vertices,
-                    Indices = indices,
-                    Surface = mesh.Surface,
-					PartTransform = bx
-				} );
-
-				var meshBounds = mesh.Bounds.Transform( bx );
-
-				_physicPartBounds = _physicPartBounds?.AddBBox( meshBounds ) ?? meshBounds;
-			}
-
 			if ( part.Mass > 0 )
 				targetBody.Mass = part.Mass;
 
@@ -377,7 +474,111 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		UpdateCollisions();
 	}
 
-	private void SubdivideHull( PhysicsGroupDescription.BodyPart.HullPart hull, int ringCount, Surface surface, Transform transform )
+	// Subdivides every physics part of a model into deformable sub-hulls/sub-meshes appended to the
+	// given lists. Used for the main model and each cap so they share the same tessellation path.
+	private void BuildSubShapes( Model model, Transform local, Rotation modelRotation, List<SubHull> targetHulls, List<SubMesh> targetMeshes, ref BBox? bounds )
+	{
+		if ( model is null || model.Physics is null )
+			return;
+
+		foreach ( var part in model.Physics.Parts )
+		{
+			// Bone transform
+			var bx = local.ToWorld( part.Transform );
+
+			foreach ( var sphere in part.Spheres )
+			{
+				const int rings = 8;
+				SubdivideSphere( rings, sphere.Sphere.Center, sphere.Sphere.Radius, sphere.Surface, bx, modelRotation.Forward, targetHulls );
+
+				var sphereBounds = new BBox( sphere.Sphere.Center - new Vector3( sphere.Sphere.Radius ), sphere.Sphere.Center + new Vector3( sphere.Sphere.Radius ) );
+
+				sphereBounds = sphereBounds.Transform( bx );
+
+				bounds = bounds?.AddBBox( sphereBounds ) ?? sphereBounds;
+			}
+
+			foreach ( var capsule in part.Capsules )
+			{
+				var rotatedCenterA = bx.PointToWorld( capsule.Capsule.CenterA );
+				var rotatedCenterB = bx.PointToWorld( capsule.Capsule.CenterB );
+				SubdivideCapsule( 4 + Subdivision, rotatedCenterA, rotatedCenterB, capsule.Capsule.Radius, capsule.Surface, targetHulls );
+
+				var capsuleBounds = BBox.FromPoints(
+					[
+						rotatedCenterA - new Vector3( capsule.Capsule.Radius ),
+						rotatedCenterA + new Vector3( capsule.Capsule.Radius ),
+						rotatedCenterB - new Vector3( capsule.Capsule.Radius ),
+						rotatedCenterB + new Vector3( capsule.Capsule.Radius )
+					] );
+
+				bounds = bounds?.AddBBox( capsuleBounds ) ?? capsuleBounds;
+			}
+
+			foreach ( var hull in part.Hulls )
+			{
+				SubdivideHull( hull, Subdivision, hull.Surface, bx, targetHulls );
+
+				var hullBounds = hull.Bounds.Transform( bx ).Rotate( modelRotation );
+
+				bounds = bounds?.AddBBox( hullBounds ) ?? hullBounds;
+			}
+
+			foreach ( var mesh in part.Meshes )
+			{
+				SubdivideMesh( mesh, bx, targetMeshes );
+
+				var meshBounds = mesh.Bounds.Transform( bx );
+
+				bounds = bounds?.AddBBox( meshBounds ) ?? meshBounds;
+			}
+		}
+	}
+
+	private void SubdivideMesh( PhysicsGroupDescription.BodyPart.MeshPart mesh, Transform transform, List<SubMesh> target )
+	{
+		var triangles = mesh.GetTriangles().ToList();
+
+		// TODO slow as fuck can be improved by getting the lists directly rather than the traingle objects
+		// can be done once we are out of scene staging.
+		var vertices = new List<Vector3>();
+		var indices = new List<int>( triangles.Count * 3 );
+		var vertexMap = new Dictionary<Vector3, int>( new Vector3Comparer() );
+
+		foreach ( var triangle in triangles )
+		{
+			if ( !vertexMap.ContainsKey( triangle.A ) )
+			{
+				vertexMap[triangle.A] = vertices.Count;
+				vertices.Add( triangle.A );
+			}
+			indices.Add( vertexMap[triangle.A] );
+
+			if ( !vertexMap.ContainsKey( triangle.B ) )
+			{
+				vertexMap[triangle.B] = vertices.Count;
+				vertices.Add( triangle.B );
+			}
+			indices.Add( vertexMap[triangle.B] );
+
+			if ( !vertexMap.ContainsKey( triangle.C ) )
+			{
+				vertexMap[triangle.C] = vertices.Count;
+				vertices.Add( triangle.C );
+			}
+			indices.Add( vertexMap[triangle.C] );
+		}
+
+		target.Add( new SubMesh
+		{
+			Vertices = vertices,
+			Indices = indices,
+			Surface = mesh.Surface,
+			PartTransform = transform
+		} );
+	}
+
+	private void SubdivideHull( PhysicsGroupDescription.BodyPart.HullPart hull, int ringCount, Surface surface, Transform transform, List<SubHull> target )
 	{
 
 		// Transform all the hull vertices once
@@ -386,7 +587,7 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		List<Vector3> transformedVertices = hull.GetPoints().Select( vertex => transform.PointToWorld( vertex ) ).ToList();
 		if ( ringCount == 0 )
 		{
-			subHulls.Add( new SubHull
+			target.Add( new SubHull
 			{
 				Vertices = transformedVertices,
 				Surface = surface,
@@ -464,7 +665,7 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 				}
 			}
 
-			subHulls.Add( new SubHull
+			target.Add( new SubHull
 			{
 				Vertices = currentGroup,
 				Surface = surface,
@@ -473,11 +674,11 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 	}
 
 
-	private void SubdivideSphere( int rings, Vector3 center, float radius, Surface surface, Transform transform )
+	private void SubdivideSphere( int rings, Vector3 center, float radius, Surface surface, Transform transform, Vector3 modelForward, List<SubHull> target )
 	{
 		var ringPoints = new List<Vector3>[rings];
 
-		Vector3 direction = ModelForward;
+		Vector3 direction = modelForward;
 
 		// Find two vectors orthogonal to ModelForward to form a coordinate system
 		// TODO there are better ways todo this
@@ -522,7 +723,7 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 			currentGroup.AddRange( ringPoints[i] );
 			currentGroup.AddRange( ringPoints[i + 1] );
 
-			subHulls.Add( new SubHull
+			target.Add( new SubHull
 			{
 				Vertices = currentGroup,
 				Surface = surface,
@@ -530,7 +731,7 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		}
 	}
 
-	private void SubdivideCapsule( int totalRings, Vector3 centerA, Vector3 centerB, float radius, Surface surface )
+	private void SubdivideCapsule( int totalRings, Vector3 centerA, Vector3 centerB, float radius, Surface surface, List<SubHull> target )
 	{
 		const int segments = 8;
 		if ( totalRings < 4 )
@@ -549,7 +750,7 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 			currentGroup.AddRange( ringPoints[i] );
 			currentGroup.AddRange( ringPoints[i + 1] );
 
-			subHulls.Add( new SubHull
+			target.Add( new SubHull
 			{
 				Vertices = currentGroup,
 				Surface = surface,
@@ -659,6 +860,11 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 
 	private List<SubHull> subHulls = new();
 	private List<SubMesh> subMeshes = new();
+
+	private List<SubHull> startCapSubHulls = new();
+	private List<SubMesh> startCapSubMeshes = new();
+	private List<SubHull> endCapSubHulls = new();
+	private List<SubMesh> endCapSubMeshes = new();
 }
 
 // need to be less precise than default
