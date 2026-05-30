@@ -9,3 +9,6 @@ Facepunch's spline tools fixed and updated
 - Surface Velocity of Spline Collider now assigns the velocity locally to each spline segment. (should follow the direction of the spline)
 
 Let me know of any issues you come across and feel free to fork or use for whatever.
+
+## Credits:
+Forked from Facepunch's spline library and assets in the screenshot are from Kenney's factory kit. https://www.kenney.nl/assets/factory-kit
