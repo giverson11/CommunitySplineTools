@@ -6,19 +6,21 @@ namespace Sandbox;
 
 public sealed class SplineModelRenderer : ModelRenderer
 {
-	[Property, Category( "Spline" )] public SplineComponent Spline 
-	{ 
-		get; 
+	[Property, Category( "Spline" )]
+	public SplineComponent Spline
+	{
+		get;
 		set
 		{
-			if (field != null) field.Spline.SplineChanged -= UpdateObject;
+			field?.Spline.SplineChanged -= UpdateObject;
 			field = value;
-			if (Enabled){
+			if ( Enabled )
+			{
 				value.Spline.SplineChanged += UpdateObject;
 				UpdateObject();
 			}
 		}
-	 }
+	}
 
 	[Property, Category( "Spline" )]
 	public Rotation ModelRotation
@@ -67,16 +69,37 @@ public sealed class SplineModelRenderer : ModelRenderer
 	} = true;
 
 
-	private Mesh customMesh = new();
+	private Mesh customMesh;
 	private Model customModel = Model.Error;
 
-	private Vertex[] modelVertices = null;
-	private uint[] modelIndices = null;
+	private Vertex[] vertexScratch;
+	private int[] indexScratch;
 
-	private Vertex[] deformedVertices;
-	private int[] deformedIndices;
+	// Describes one contiguous slice of the merged buffer (either the repeating main mesh or a cap).
+	// Filled in two passes: counts + material first to plan the layout, then verts/indices written
+	// at VertexStart / IndexStart.
+	private struct Segment
+	{
+		public Vertex[] SrcVerts;
+		public uint[] SrcIndices;
+		public Material Material;
+		public Rotation DeformRotation;
+		public Vector3 DeformOffset;
+		public Vector3 DeformScale;
+		public float SrcMin;
+		public float SrcSize;
+		public float SegmentStart;
+		public float DistancePerCopyWithSpacing;
+		public int Copies;
+		public float Spacing;
 
-	[Property, Category( "Spline" ), MinMax(0, float.PositiveInfinity)]
+		public int VertexStart;
+		public int IndexStart;
+		public int VertexCount => SrcVerts.Length * Copies;
+		public int IndexCount => SrcIndices.Length * Copies;
+	}
+
+	[Property, Category( "Spline" ), MinMax( 0, float.PositiveInfinity )]
 	public float Spacing
 	{
 		get;
@@ -103,7 +126,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 	[Property, FeatureEnabled( "Start Cap" )]
 	public bool StartCapEnabled
 	{
-		get; 
+		get;
 		set
 		{
 			field = value;
@@ -114,7 +137,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 	[Property, FeatureEnabled( "End Cap" )]
 	public bool EndCapEnabled
 	{
-		get; 
+		get;
 		set
 		{
 			field = value;
@@ -216,14 +239,6 @@ public sealed class SplineModelRenderer : ModelRenderer
 	} = Vector3.Zero;
 
 
-	private Mesh startCapMesh;
-	private Mesh endCapMesh;
-
-	private Vertex[] startCapDeformedVertices;
-	private int[] startCapDeformedIndices;
-	private Vertex[] endCapDeformedVertices;
-	private int[] endCapDeformedIndices;
-
 	protected override void OnEnabled()
 	{
 		base.OnEnabled();
@@ -286,8 +301,6 @@ public sealed class SplineModelRenderer : ModelRenderer
 	{
 		base.UpdateObject();
 
-		customMesh ??= new();
-
 		if ( !SceneObject.IsValid() || !Spline.IsValid() )
 			return;
 
@@ -295,8 +308,8 @@ public sealed class SplineModelRenderer : ModelRenderer
 		var model = SceneObject.Model;
 
 		var mainMaterial = MaterialOverride ?? model.Materials.FirstOrDefault();
-		modelIndices = model.GetIndices();
-		modelVertices = model.GetVertices();
+		var modelIndices = model.GetIndices();
+		var modelVertices = model.GetVertices();
 
 		var (mainMin, mainSize) = GetForwardSpan( model.Bounds, ModelRotation, ModelScale );
 
@@ -310,21 +323,25 @@ public sealed class SplineModelRenderer : ModelRenderer
 		float startCapMin = 0f, startCapSize = 0f;
 		Vertex[] startCapVerts = null;
 		uint[] startCapInds = null;
+		Material startCapMaterial = null;
 		if ( hasStartCap )
 		{
 			(startCapMin, startCapSize) = GetForwardSpan( StartCap.Bounds, StartCapRotation, StartCapScale );
 			startCapVerts = StartCap.GetVertices();
 			startCapInds = StartCap.GetIndices();
+			startCapMaterial = StartCap.Materials.FirstOrDefault();
 		}
 
 		float endCapMin = 0f, endCapSize = 0f;
 		Vertex[] endCapVerts = null;
 		uint[] endCapInds = null;
+		Material endCapMaterial = null;
 		if ( hasEndCap )
 		{
 			(endCapMin, endCapSize) = GetForwardSpan( EndCap.Bounds, EndCapRotation, EndCapScale );
 			endCapVerts = EndCap.GetVertices();
 			endCapInds = EndCap.GetIndices();
+			endCapMaterial = EndCap.Materials.FirstOrDefault();
 		}
 
 		// Interior region for repeating mesh — caps eat into each end.
@@ -351,7 +368,6 @@ public sealed class SplineModelRenderer : ModelRenderer
 				distancePerMeshWitSpacing = mainLength / meshesRequiredWithSpacing;
 			}
 		}
-		
 
 		int framesPerMesh = 12;
 		int frameCount = Math.Max( 2, frameSegments * framesPerMesh + 1 );
@@ -359,66 +375,125 @@ public sealed class SplineModelRenderer : ModelRenderer
 			? CalculateRotationMinimizingTangentFrames( Spline.Spline, frameCount )
 			: CalculateTangentFramesUsingUpDir( Spline.Spline, frameCount );
 
-		// Main repeating mesh in the interior region.
-		bool builtMain = false;
-		if ( meshesRequiredWithSpacing > 0 )
-		{
-			BuildSegmentMesh( customMesh,
-				modelVertices, modelIndices, mainMaterial,
-				ModelRotation, ModelOffset, ModelScale,
-				mainMin, mainSize,
-				mainStartDistance, distancePerMeshWitSpacing,
-				meshesRequiredWithSpacing, Spacing,
-				frames,
-				ref deformedVertices, ref deformedIndices );
-			builtMain = true;
-		}
-
-		// Start cap occupies [0, mainStartDistance].
-		bool builtStartCap = false;
-		if ( hasStartCap && mainStartDistance > 0f )
-		{
-			startCapMesh ??= new();
-			BuildSegmentMesh( startCapMesh,
-				startCapVerts, startCapInds,
-				StartCap.Materials.FirstOrDefault(),
-				StartCapRotation, StartCapOffset, StartCapScale,
-				startCapMin, startCapSize,
-				0f, mainStartDistance,
-				1, 0f,
-				frames,
-				ref startCapDeformedVertices, ref startCapDeformedIndices );
-			builtStartCap = true;
-		}
-
-		// End cap occupies [mainEndDistance, splineLength].
-		bool builtEndCap = false;
 		float endCapRegion = splineLength - mainEndDistance;
-		float endCapStartDistance = mainStartDistance + distancePerMeshWitSpacing*meshesRequiredWithSpacing;
-		if ( hasEndCap && endCapRegion > 0f )
+		float endCapStartDistance = mainStartDistance + distancePerMeshWitSpacing * meshesRequiredWithSpacing;
+		var ordered = new List<Segment>();
+
+		// Spatial order: start cap, main, end cap. Each segment occupies one contiguous slice of
+		// the merged index buffer, so the differing-material caps can be peeled off the front/back
+		// while the middle stays as the main draw range.
+		bool hasStart = hasStartCap && mainStartDistance > 0f && startCapVerts is not null && startCapVerts.Length > 0;
+		if ( hasStart )
 		{
-			endCapMesh ??= new();
-			BuildSegmentMesh( endCapMesh,
-				endCapVerts, endCapInds,
-				EndCap.Materials.FirstOrDefault(),
-				EndCapRotation, EndCapOffset, EndCapScale,
-				endCapMin, endCapSize,
-				endCapStartDistance, endCapRegion,
-				1, 0f,
-				frames,
-				ref endCapDeformedVertices, ref endCapDeformedIndices );
-			builtEndCap = true;
+			ordered.Add( new Segment
+			{
+				SrcVerts = startCapVerts,
+				SrcIndices = startCapInds,
+				Material = startCapMaterial,
+				DeformRotation = StartCapRotation,
+				DeformOffset = StartCapOffset,
+				DeformScale = StartCapScale,
+				SrcMin = startCapMin,
+				SrcSize = startCapSize,
+				SegmentStart = 0f,
+				DistancePerCopyWithSpacing = mainStartDistance,
+				Copies = 1,
+				Spacing = 0f,
+			} );
 		}
 
-		if ( !builtMain && !builtStartCap && !builtEndCap )
+		bool hasMain = meshesRequiredWithSpacing > 0;
+		if ( hasMain )
+		{
+			ordered.Add( new Segment
+			{
+				SrcVerts = modelVertices,
+				SrcIndices = modelIndices,
+				Material = mainMaterial,
+				DeformRotation = ModelRotation,
+				DeformOffset = ModelOffset,
+				DeformScale = ModelScale,
+				SrcMin = mainMin,
+				SrcSize = mainSize,
+				SegmentStart = mainStartDistance,
+				DistancePerCopyWithSpacing = distancePerMeshWitSpacing,
+				Copies = meshesRequiredWithSpacing,
+				Spacing = Spacing,
+			} );
+		}
+
+		bool hasEnd = hasEndCap && endCapRegion > 0f && endCapVerts is not null && endCapVerts.Length > 0;
+		if ( hasEnd )
+		{
+			ordered.Add( new Segment
+			{
+				SrcVerts = endCapVerts,
+				SrcIndices = endCapInds,
+				Material = endCapMaterial,
+				DeformRotation = EndCapRotation,
+				DeformOffset = EndCapOffset,
+				DeformScale = EndCapScale,
+				SrcMin = endCapMin,
+				SrcSize = endCapSize,
+				SegmentStart = endCapStartDistance,
+				DistancePerCopyWithSpacing = endCapRegion,
+				Copies = 1,
+				Spacing = 0f,
+			} );
+		}
+
+		if ( ordered.Count == 0 )
 			return;
 
-		var builder = Model.Builder;
-		if ( builtMain ) builder = builder.AddMesh( customMesh );
-		if ( builtStartCap ) builder = builder.AddMesh( startCapMesh );
-		if ( builtEndCap ) builder = builder.AddMesh( endCapMesh );
+		int totalVerts = 0;
+		int totalInds = 0;
+		for ( int i = 0; i < ordered.Count; i++ )
+		{
+			var seg = ordered[i];
+			seg.VertexStart = totalVerts;
+			seg.IndexStart = totalInds;
+			ordered[i] = seg;
+			totalVerts += seg.VertexCount;
+			totalInds += seg.IndexCount;
+		}
 
-		customModel = builder.Create();
+		if ( vertexScratch == null || vertexScratch.Length < totalVerts )
+			vertexScratch = new Vertex[totalVerts];
+		if ( indexScratch == null || indexScratch.Length < totalInds )
+			indexScratch = new int[totalInds];
+
+		foreach ( var seg in ordered )
+			FillSegment( seg, frames );
+
+		// AddSubMesh is additive with no clear, so rebuild the Mesh each update. The Model builder
+		// rebuild below was already per-update, so the marginal cost is just the Mesh handle.
+		customMesh = new Mesh();
+		customMesh.CreateVertexBuffer( totalVerts, vertexScratch.AsSpan( 0, totalVerts ) );
+		customMesh.CreateIndexBuffer( totalInds, indexScratch.AsSpan( 0, totalInds ) );
+		customMesh.Bounds = BBox.FromPoints( vertexScratch.Take( totalVerts ).Select( v => v.Position ) );
+		customMesh.SetIndexRange( 0, 0 );
+
+		// Peel a differing-material cap off the front/back; what's left in the middle is the main draw.
+		int mainStartIndex = 0;
+		int mainLastIndex = totalInds;
+
+		if ( hasStart && ordered.First().Material != mainMaterial )
+		{
+			var startCap = ordered.First();
+			customMesh.AddSubMesh( startCap.Material, startCap.IndexStart, startCap.IndexCount );
+			mainStartIndex = startCap.IndexStart + startCap.IndexCount;
+		}
+
+		if ( hasEnd && ordered.Last().Material != mainMaterial )
+		{
+			var endCap = ordered.Last();
+			customMesh.AddSubMesh( endCap.Material, endCap.IndexStart, endCap.IndexCount );
+			mainLastIndex = endCap.IndexStart;
+		}
+
+		customMesh.AddSubMesh( mainMaterial, mainStartIndex, mainLastIndex - mainStartIndex );
+
+		customModel = Model.Builder.AddMesh( customMesh ).Create();
 		SceneObject.Model = customModel;
 	}
 
@@ -432,77 +507,35 @@ public sealed class SplineModelRenderer : ModelRenderer
 		return (min, size);
 	}
 
-	private void BuildSegmentMesh(
-		Mesh mesh,
-		Vertex[] srcVerts,
-		uint[] srcIndices,
-		Material material,
-		Rotation deformRotation,
-		Vector3 deformOffset,
-		Vector3 deformScale,
-		float srcMin,
-		float srcSize,
-		float segmentStart,
-		float distancePerCopyWithSpacing,
-		int copies,
-		float spacing,
-		Transform[] frames,
-		ref Vertex[] vertScratch,
-		ref int[] indexScratch )
+	private void FillSegment( Segment seg, Transform[] frames )
 	{
-		int totalVerts = srcVerts.Length * copies;
-		int totalInds = srcIndices.Length * copies;
-
-		if ( vertScratch == null || vertScratch.Length < totalVerts )
-			vertScratch = new Vertex[totalVerts];
-		if ( indexScratch == null || indexScratch.Length < totalInds )
-			indexScratch = new int[totalInds];
-
-		var localVerts = vertScratch;
+		int srcVertsLen = seg.SrcVerts.Length;
+		int srcIndsLen = seg.SrcIndices.Length;
+		int vBase = seg.VertexStart;
+		int iBase = seg.IndexStart;
+		var localVerts = vertexScratch;
 		var localInds = indexScratch;
 
-		Utility.Parallel.For( 0, copies, copyIdx =>
+		Utility.Parallel.For( 0, seg.Copies, copyIdx =>
 		{
-			float copyStart = segmentStart + copyIdx * distancePerCopyWithSpacing;
-			float copyEnd = copyStart + distancePerCopyWithSpacing - spacing;
+			float copyStart = seg.SegmentStart + copyIdx * seg.DistancePerCopyWithSpacing;
+			float copyEnd = copyStart + seg.DistancePerCopyWithSpacing - seg.Spacing;
 
-			for ( int i = 0; i < srcVerts.Length; i++ )
+			for ( int i = 0; i < srcVertsLen; i++ )
 			{
-				var vertex = srcVerts[i];
-				var deformedVertex = vertex;
-				Deform( Spline, deformRotation, deformOffset, deformScale,
+				var vertex = seg.SrcVerts[i];
+				var deformed = vertex;
+				Deform( Spline, seg.DeformRotation, seg.DeformOffset, seg.DeformScale,
 					vertex.Position, vertex.Normal, vertex.Tangent,
-					frames, copyStart, copyEnd, srcMin, srcSize,
-					out deformedVertex.Position, out deformedVertex.Normal, out deformedVertex.Tangent );
-				localVerts[srcVerts.Length * copyIdx + i] = deformedVertex;
+					frames, copyStart, copyEnd, seg.SrcMin, seg.SrcSize,
+					out deformed.Position, out deformed.Normal, out deformed.Tangent );
+				localVerts[vBase + srcVertsLen * copyIdx + i] = deformed;
 			}
-			for ( int i = 0; i < srcIndices.Length; i++ )
+			for ( int i = 0; i < srcIndsLen; i++ )
 			{
-				localInds[srcIndices.Length * copyIdx + i] = (int)(srcIndices[i] + srcVerts.Length * copyIdx);
+				localInds[iBase + srcIndsLen * copyIdx + i] = (int)(seg.SrcIndices[i] + vBase + srcVertsLen * copyIdx);
 			}
 		} );
-
-		mesh.Material = material;
-
-		if ( mesh.HasVertexBuffer )
-		{
-			if ( mesh.IndexCount < totalInds )
-				mesh.SetIndexBufferSize( indexScratch.Length );
-			mesh.SetIndexBufferData( indexScratch.AsSpan( 0, totalInds ) );
-			mesh.SetIndexRange( 0, totalInds );
-
-			if ( mesh.VertexCount < totalVerts )
-				mesh.SetVertexBufferSize( vertScratch.Length );
-			mesh.SetVertexRange( 0, totalVerts );
-			mesh.SetVertexBufferData( vertScratch.AsSpan( 0, totalVerts ) );
-		}
-		else
-		{
-			mesh.CreateVertexBuffer( totalVerts, vertScratch.AsSpan( 0, totalVerts ) );
-			mesh.CreateIndexBuffer( totalInds, indexScratch.AsSpan( 0, totalInds ) );
-		}
-
-		mesh.Bounds = BBox.FromPoints( vertScratch.Take( totalVerts ).Select( v => v.Position ) );
 	}
 
 	// TODO Has there ever been a function with more args?
@@ -548,7 +581,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 		deformedTangent = new Vector4( rotation * (modelRoation * localTangent), localTangent.w );
 	}
 
-		// Internal for now no need to expose this yet without, spline deformers
+	// Internal for now no need to expose this yet without, spline deformers
 	internal static Transform[] CalculateTangentFramesUsingUpDir( Spline spline, int frameCount )
 	{
 		Transform[] frames = new Transform[frameCount];
@@ -583,7 +616,7 @@ public sealed class SplineModelRenderer : ModelRenderer
 	}
 
 	// Internal for now no need to expose this yet without spline deformers
-	internal static  Transform[] CalculateRotationMinimizingTangentFrames( Spline spline, int frameCount )
+	internal static Transform[] CalculateRotationMinimizingTangentFrames( Spline spline, int frameCount )
 	{
 		Transform[] frames = new Transform[frameCount];
 
@@ -660,6 +693,5 @@ public sealed class SplineModelRenderer : ModelRenderer
 		float r3 = Vector3.Dot( v2, nL ) / Vector3.Dot( v2, v2 );
 		return (nL - 2f * r3 * v2).Normal;
 	}
-
 }
 
