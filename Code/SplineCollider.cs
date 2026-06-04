@@ -10,7 +10,7 @@ public sealed class SplineCollider : ModelCollider, Component.ExecuteInEditor
 		get; 
 		set
 		{
-			if(field != null ) field.Spline.SplineChanged -= MarkDirty;
+			field?.Spline.SplineChanged -= MarkDirty;
 			field = value;
 			if(Enabled) {
 				field.Spline.SplineChanged += MarkDirty;
